@@ -1,0 +1,188 @@
+{
+  "name": "Download Request",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "download-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-download",
+      "name": "Webhook - Download Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "table": "user_sessions",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            { "key": "session_token", "operator": "equals", "value": "={{ $json.session_token }}" },
+            { "key": "revoked", "operator": "equals", "value": false }
+          ]
+        }
+      },
+      "id": "validate-session",
+      "name": "Validate Session",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-session-valid",
+      "name": "Check Session Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if session expired\nconst expiresAt = new Date($json[0].expires_at);\nconst now = new Date();\n\nif (now > expiresAt) {\n  throw new Error('Session has expired');\n}\n\nreturn [{json: { user_id: $json[0].user_id }}];"
+      },
+      "id": "check-expiration",
+      "name": "Check Session Expiration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "table": "user_accounts",
+        "returnAll": false,
+        "limit": 1,
+        "filters": {
+          "conditions": [
+            { "key": "id", "operator": "equals", "value": "={{ $json.user_id }}" }
+          ]
+        }
+      },
+      "id": "get-user-yacht",
+      "name": "Get User Yacht",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate download token\nconst crypto = require('crypto');\nconst downloadToken = crypto.randomBytes(32).toString('hex');\n\n// Generate 2FA code for download verification\nconst twoFACode = Math.floor(100000 + Math.random() * 900000).toString();\n\nconst yachtId = $json[0].yacht_id;\n\nreturn [{\n  json: {\n    yacht_id: yachtId,\n    download_token: downloadToken,\n    twofa_code: twoFACode,\n    download_url: `https://downloads.celeste7.ai/${downloadToken}/CelesteOS-${yachtId}.dmg`,\n    package_name: `CelesteOS-${yachtId}.dmg`,\n    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days\n  }\n}];"
+      },
+      "id": "generate-download-link",
+      "name": "Generate Download Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "download_links",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "yacht_id": "={{ $json.yacht_id }}",
+            "yacht_id_hash": "placeholder_hash",
+            "download_token": "={{ $json.download_token }}",
+            "download_url": "={{ $json.download_url }}",
+            "twofa_code": "={{ $json.twofa_code }}",
+            "expires_at": "={{ $json.expires_at }}",
+            "package_name": "={{ $json.package_name }}",
+            "package_size_bytes": 524288000,
+            "downloaded": false,
+            "download_count": 0
+          }
+        }
+      },
+      "id": "create-download-link",
+      "name": "Create Download Link",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"download_token\": $json.download_token, \"message\": \"Download link created\" } }}"
+      },
+      "id": "respond-success",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Invalid or expired session\" } }}"
+      },
+      "id": "respond-error",
+      "name": "Respond - Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Webhook - Download Request": {
+      "main": [[{ "node": "Validate Session", "type": "main", "index": 0 }]]
+    },
+    "Validate Session": {
+      "main": [[{ "node": "Check Session Valid", "type": "main", "index": 0 }]]
+    },
+    "Check Session Valid": {
+      "main": [
+        [{ "node": "Check Session Expiration", "type": "main", "index": 0 }],
+        [{ "node": "Respond - Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Session Expiration": {
+      "main": [[{ "node": "Get User Yacht", "type": "main", "index": 0 }]]
+    },
+    "Get User Yacht": {
+      "main": [[{ "node": "Generate Download Link", "type": "main", "index": 0 }]]
+    },
+    "Generate Download Link": {
+      "main": [[{ "node": "Create Download Link", "type": "main", "index": 0 }]]
+    },
+    "Create Download Link": {
+      "main": [[{ "node": "Respond - Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": []
+}

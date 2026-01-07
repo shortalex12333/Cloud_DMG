@@ -1,0 +1,105 @@
+{
+  "name": "User Login + 2FA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-login",
+      "name": "Webhook - User Login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate random 6-digit 2FA code\nconst code = Math.floor(100000 + Math.random() * 900000).toString();\n\n// Hash the code with SHA-256\nconst crypto = require('crypto');\nconst codeHash = crypto.createHash('sha256').update(code).digest('hex');\n\n// Return data\nreturn [{\n  json: {\n    user_id: $json.user_id,\n    email: $json.email,\n    code: code,\n    code_hash: codeHash,\n    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes\n  }\n}];"
+      },
+      "id": "generate-2fa-code",
+      "name": "Generate 2FA Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "twofa_codes",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user_id": "={{ $json.user_id }}",
+            "code": "={{ $json.code }}",
+            "code_hash": "={{ $json.code_hash }}",
+            "purpose": "login",
+            "expires_at": "={{ $json.expires_at }}",
+            "attempts": 0,
+            "max_attempts": 3
+          }
+        }
+      },
+      "id": "insert-2fa-code",
+      "name": "Insert 2FA Code",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@celeste7.ai",
+        "toEmail": "={{ $json.email }}",
+        "subject": "CelesteOS - Your 2FA Code",
+        "emailFormat": "text",
+        "text": "Your 2FA verification code is:\n\n{{ $json.code }}\n\nThis code expires in 10 minutes.\n\nDo not share this code with anyone.\n\n--\nCelesteOS Team"
+      },
+      "id": "send-2fa-email",
+      "name": "Send 2FA Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "2",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"awaiting_2fa\", \"user_id\": $json.user_id, \"message\": \"2FA code sent to email\" } }}"
+      },
+      "id": "respond-success",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - User Login": {
+      "main": [[{ "node": "Generate 2FA Code", "type": "main", "index": 0 }]]
+    },
+    "Generate 2FA Code": {
+      "main": [[{ "node": "Insert 2FA Code", "type": "main", "index": 0 }]]
+    },
+    "Insert 2FA Code": {
+      "main": [[{ "node": "Send 2FA Email", "type": "main", "index": 0 }]]
+    },
+    "Send 2FA Email": {
+      "main": [[{ "node": "Respond - Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": []
+}

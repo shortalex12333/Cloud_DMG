@@ -1,0 +1,1216 @@
+{
+  "name": "Signature_Installer_Cloud",
+  "nodes": [
+    {
+      "parameters": {
+        "toRecipients": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "bodyContent": "={{ $json.html }}",
+        "additionalFields": {
+          "bodyContentType": "html"
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        -700
+      ],
+      "id": "cc926553-0ad6-46ef-93fb-0d05672ee5e8",
+      "name": "Microsoft Outlook",
+      "webhookId": "07299cea-31af-4e77-b2b3-1c9e99858f39",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "W9dyroshZ6nsHo8q",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "register",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4f25af88-ff34-4203-b230-6d9f12bcaa76",
+      "name": "Webhook: POST /register",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2920,
+        -400
+      ],
+      "webhookId": "yacht-register-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and sanitize input\nconst body = $json.body || {};\nconst yachtId = body.yacht_id;\nconst yachtIdHash = body.yacht_id_hash;\n\n// Input validation\nconst errors = [];\n\nif (!yachtId || typeof yachtId !== 'string') {\n  errors.push('yacht_id is required and must be a string');\n} else if (!/^[A-Z0-9_-]+$/.test(yachtId)) {\n  errors.push('yacht_id contains invalid characters (only A-Z, 0-9, _, - allowed)');\n} else if (yachtId.length > 50) {\n  errors.push('yacht_id too long (max 50 characters)');\n}\n\nif (!yachtIdHash || typeof yachtIdHash !== 'string') {\n  errors.push('yacht_id_hash is required and must be a string');\n} else if (!/^[a-f0-9]{64}$/.test(yachtIdHash)) {\n  errors.push('yacht_id_hash must be a valid 64-character hex string (SHA-256)');\n}\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      valid: false,\n      errors: errors\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId,\n    yacht_id_hash: yachtIdHash\n  }\n}];"
+      },
+      "id": "1d391f74-3839-4736-89b9-48af0d6e91d9",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2700,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2ee17ca0-3074-4792-bfe0-c93230011db7",
+      "name": "Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2480,
+        -500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  yacht_id,\n  yacht_id_hash,\n  buyer_email,\n  active,\n  credentials_retrieved\nFROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}' \n  AND yacht_id_hash = '{{ $json.yacht_id_hash }}'\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "id": "91df8630-7f35-456a-b593-887d1e5ed809",
+      "name": "Lookup Yacht",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2260,
+        -575
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{$json.yacht_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "810d9e1f-1feb-4e89-bdd3-d85bd228df86",
+      "name": "Yacht Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2040,
+        -575
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check buyer_email validity\nconst registration = $json;\nconst buyerEmail = registration.buyer_email;\n\nif (!buyerEmail) {\n  return [{\n    json: {\n      valid: false,\n      error: 'no_buyer_email',\n      message: 'This yacht has no buyer email configured. Please contact support.'\n    }\n  }];\n}\n\n// Basic email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!emailRegex.test(buyerEmail)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'invalid_buyer_email',\n      message: 'Buyer email is invalid. Please contact support.'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    ...registration\n  }\n}];"
+      },
+      "id": "a699898a-39e9-4c64-97ae-20312221e5ad",
+      "name": "Validate Buyer Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1820,
+        -650
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "560b1982-8bf7-4358-964b-a19ad9788e82",
+      "name": "Email Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        -650
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET registered_at = NOW()\nWHERE yacht_id = '{{ $json.yacht_id }}'\nRETURNING *;",
+        "options": {}
+      },
+      "id": "7483f697-b9b8-435b-82da-1d0c13f03348",
+      "name": "Update Registration Timestamp",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1380,
+        -700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare activation email with XSS-safe content\nconst registration = $json;\nconst yachtId = registration.yacht_id;\nconst buyerEmail = registration.buyer_email;\n\n// HTML escape function\nconst escapeHtml = (str) => {\n  return String(str)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#039;');\n};\n\nconst yachtIdSafe = escapeHtml(yachtId);\nconst activationLink = `https://api.celeste7.ai/webhook/yacht-activate-webhook-v2/activate/${encodeURIComponent(yachtId)}`;\n\nconst htmlBody = '<!DOCTYPE html>' +\n'<html>' +\n'<head>' +\n'  <meta charset=\"UTF-8\">' +\n'  <style>' +\n'    body { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; background: #f5f5f5; padding: 40px; }' +\n'    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }' +\n'    .header { text-align: center; margin-bottom: 30px; }' +\n'    .logo { font-size: 32px; font-weight: bold; color: #0066cc; }' +\n'    h2 { color: #333; margin-bottom: 20px; }' +\n'    .yacht-name { color: #0066cc; font-weight: bold; }' +\n'    .button { display: inline-block; background: #0066cc; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; margin: 20px 0; }' +\n'    .code { font-family: \"Courier New\", monospace; background: #f0f0f0; padding: 8px 12px; border-radius: 4px; display: inline-block; margin: 10px 0; }' +\n'    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px; }' +\n'  </style>' +\n'</head>' +\n'<body>' +\n'  <div class=\"container\">' +\n'    <div class=\"header\">' +\n'      <div class=\"logo\">⚓ Celeste7</div>' +\n'    </div>' +\n'    <h2>Yacht Registration Confirmation</h2>' +\n'    <p>Your yacht <span class=\"yacht-name\">' + yachtIdSafe + '</span> is requesting activation.</p>' +\n'    <p>Click the button below to activate your yacht:</p>' +\n'    <div style=\"text-align: center;\">' +\n'      <a href=\"' + activationLink + '\" class=\"button\">Activate Yacht</a>' +\n'    </div>' +\n'    <p>Or copy this link:</p>' +\n'    <div class=\"code\">' + activationLink + '</div>' +\n'    <div class=\"footer\">' +\n'      <p>Yacht ID: <span class=\"code\">' + yachtIdSafe + '</span></p>' +\n'      <p>If you did not request this, please ignore this email.</p>' +\n'    </div>' +\n'  </div>' +\n'</body>' +\n'</html>';\n\nconst textBody = 'Yacht Registration Confirmation\\n\\n' +\n'Your yacht ' + yachtId + ' is requesting activation.\\n\\n' +\n'Activation link: ' + activationLink + '\\n\\n' +\n'Yacht ID: ' + yachtId + '\\n\\n' +\n'If you did not request this activation, please ignore this email.';\n\nconst emailData = {\n  to: buyerEmail,\n  subject: 'Activate Your Yacht: ' + yachtIdSafe,\n  html: htmlBody,\n  text: textBody\n};\n\nreturn [{\n  json: {\n    ...emailData,\n    yacht_id: yachtId,\n    activation_link: activationLink,\n    yacht_id_hash: registration.yacht_id_hash\n  }\n}];"
+      },
+      "id": "b3ff8939-d9c6-4edb-a2e8-1544a60ea777",
+      "name": "Prepare Email (XSS-Safe)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare success response\nconst prevNode = $('Prepare Email (XSS-Safe)').item.json;\n\nconst response = {\n  success: true,\n  yacht_id: prevNode.yacht_id,\n  activation_link: prevNode.activation_link,\n  message: 'Registration successful. Check your email for activation link.',\n  status: 'pending_activation'\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "8cb8899c-daf7-43a9-9bee-791303142ad0",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d388dc33-df02-43b9-b21c-9a660f15b9b1",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -500,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format error responses\nconst error = $json.error || 'unknown_error';\nconst message = $json.message || 'An error occurred';\nconst errors = $json.errors;\n\nconst response = {\n  success: false,\n  error: error,\n  message: message\n};\n\nif (errors) {\n  response.errors = errors;\n}\n\nreturn [{ json: response }];"
+      },
+      "id": "ab449d10-0993-4b2b-b97f-e14e91d177b6",
+      "name": "Format Error Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1380,
+        -450
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": "={{ $json.error === 'yacht_not_found' ? 404 : 400 }}"
+        }
+      },
+      "id": "adb326ca-fd84-48e8-bd1b-67f97973fd5d",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1160,
+        -450
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-activation/:yacht_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "2e0ace89-dc1d-4ca3-959f-2e17ebb20023",
+      "name": "Webhook: GET /check-activation/:yacht_id",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2920,
+        470
+      ],
+      "webhookId": "yacht-check-activation-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate yacht_id parameter\nconst yachtId = $json.params.yacht_id;\n\nif (!yachtId || !/^[A-Z0-9_-]+$/.test(yachtId)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'Invalid yacht ID format'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId\n  }\n}];"
+      },
+      "id": "9fcc2d6d-2cca-4c27-a397-7040a6893223",
+      "name": "Validate Check Parameter",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2700,
+        470
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ccdddaca-cc91-43ce-9584-7424d96cb0f0",
+      "name": "Check Parameter Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2480,
+        470
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  yacht_id,\n  yacht_id_hash,\n  shared_secret,\n  active,\n  credentials_retrieved,\n  activated_at\nFROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}'\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "id": "37a487f0-8305-48a5-8a70-8e39fea44a05",
+      "name": "Lookup Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2260,
+        395
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check activation status\nconst yachtId = $('Validate Check Parameter').item.json.yacht_id;\n\nif (!$json.yacht_id) {\n  return [{\n    json: {\n      status: 'invalid',\n      message: 'Invalid yacht ID'\n    }\n  }];\n}\n\nconst registration = $json;\n\nif (registration.active) {\n  if (registration.credentials_retrieved) {\n    return [{\n      json: {\n        status: 'already_retrieved',\n        message: 'Credentials have already been retrieved',\n        activated_at: registration.activated_at\n      }\n    }];\n  }\n  \n  // Return credentials ONE TIME ONLY\n  return [{\n    json: {\n      status: 'active',\n      yacht_id: registration.yacht_id,\n      yacht_id_hash: registration.yacht_id_hash,\n      shared_secret: registration.shared_secret,\n      activated_at: registration.activated_at,\n      _mark_retrieved: true\n    }\n  }];\n} else {\n  return [{\n    json: {\n      status: 'pending',\n      message: 'Waiting for owner activation',\n      yacht_id: yachtId\n    }\n  }];\n}"
+      },
+      "id": "85ab46cf-0c00-4f29-858a-0164ab0fdf2a",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2040,
+        395
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should_mark",
+              "leftValue": "={{$json._mark_retrieved}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7a8f7e53-f08a-4b8a-9ef8-fe21ceee88dc",
+      "name": "Should Mark Retrieved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1820,
+        395
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET credentials_retrieved = true\nWHERE yacht_id = '{{ $json.yacht_id }}';",
+        "options": {}
+      },
+      "id": "db6aa221-9cb4-4076-a9e1-28f3808cee7b",
+      "name": "Mark Credentials Retrieved",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1600,
+        345
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Remove internal flag before responding\nconst response = { ...$('Check Status').item.json };\ndelete response._mark_retrieved;\nreturn [{ json: response }];"
+      },
+      "id": "cce5f99b-62df-4c8c-b002-3963f253f0d9",
+      "name": "Clean Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1380,
+        345
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "61ff7c20-4e02-4ee3-987b-ee90a71b5b5e",
+      "name": "Respond Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1160,
+        345
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Remove internal flag for other statuses\nconst response = { ...$json };\ndelete response._mark_retrieved;\nreturn [{ json: response }];"
+      },
+      "id": "7bc7fb16-f065-43a1-bc3f-d9ccb27fc85b",
+      "name": "Clean Other Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1600,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "7e5b8827-46dd-434a-9821-1c6479b21f3b",
+      "name": "Respond Other Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1380,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "0291735c-f0c7-4fd5-8650-95e782838b68",
+      "name": "Schedule: Daily Cleanup",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2920,
+        830
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM fleet_registry\nWHERE active = false \n  AND registered_at IS NOT NULL \n  AND registered_at < NOW() - INTERVAL '7 days'\nRETURNING yacht_id;",
+        "options": {}
+      },
+      "id": "dc4e5d05-cf68-48d1-8872-a84d4df7d14e",
+      "name": "Cleanup Abandoned Registrations",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2700,
+        830
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -3200,
+        -620
+      ],
+      "id": "dc54f438-e107-48a6-a8bb-f0596b1a7674",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "path": "activate/:yacht_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "73e5f56c-6352-438c-b8a1-fcbcc8afd3c8",
+      "name": "Webhook: GET /activate/:yacht_id1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2740,
+        40
+      ],
+      "webhookId": "yacht-activate-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate yacht_id parameter\nconst yachtId = $json.params.yacht_id;\n\nif (!yachtId || !/^[A-Z0-9_-]+$/.test(yachtId)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'Invalid yacht ID format'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId\n  }\n}];"
+      },
+      "id": "7be99ba7-8008-4a38-b693-1591694e1ce8",
+      "name": "Validate yacht_id Parameter1",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2520,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e6043a5-dee0-4ff4-883b-3eea17c8870c",
+      "name": "Parameter Valid?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -2300,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}' AND active = true\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "id": "31c99b10-8063-4317-aabf-702207cb14d6",
+      "name": "Lookup for Activation1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -2080,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{$json.yacht_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b7df19ad-63a3-4477-a920-c62c31399073",
+      "name": "Can Activate?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1860,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET \n  active = true,\n  activated_at = NOW(),\n  shared_secret = encode(gen_random_bytes(32), 'hex')\nWHERE yacht_id = '{{ $json.yacht_id }}'\nRETURNING *;",
+        "options": {
+          "queryBatching": "independently"
+        }
+      },
+      "id": "67ba2480-6c39-4328-bc16-e800316551d1",
+      "name": "Activate Yacht1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1420,
+        -120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate success HTML with XSS protection\nconst yachtId = $json.yacht_id;\nconst escapeHtml = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst yachtIdSafe = escapeHtml(yachtId);\n\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Yacht Activated</title>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 16px; padding: 48px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; max-width: 500px; animation: slideIn 0.5s ease-out; }\n    @keyframes slideIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }\n    .icon { font-size: 72px; margin-bottom: 24px; }\n    h1 { color: #333; margin-bottom: 16px; font-size: 32px; }\n    p { color: #666; font-size: 18px; line-height: 1.6; margin-bottom: 12px; }\n    .yacht-id { font-family: 'Courier New', monospace; background: #f0f0f0; padding: 12px 20px; border-radius: 8px; display: inline-block; margin: 20px 0; font-weight: bold; color: #0066cc; }\n    .success { color: #10b981; font-weight: 600; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"icon\">⚓</div>\n    <h1>Yacht Activated!</h1>\n    <p class=\"success\">Your yacht has been successfully activated.</p>\n    <div class=\"yacht-id\">${yachtIdSafe}</div>\n    <p>Your yacht is now authorized to communicate with Celeste7 Cloud.</p>\n    <p style=\"margin-top: 32px; font-size: 14px; color: #999;\">You can close this window.</p>\n  </div>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "0f419dc8-bcef-402f-b45d-a1b263cdd09a",
+      "name": "Generate Success Page1",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c634f65b-df3c-4098-938e-6b5dc08e3ea4",
+      "name": "Respond Success Page1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -980,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate error HTML\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Activation Error</title>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 16px; padding: 48px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; max-width: 500px; }\n    .icon { font-size: 72px; margin-bottom: 24px; }\n    h1 { color: #333; margin-bottom: 16px; font-size: 32px; }\n    p { color: #666; font-size: 18px; line-height: 1.6; }\n    .error { color: #ef4444; font-weight: 600; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"icon\">⚠️</div>\n    <h1>Activation Error</h1>\n    <p class=\"error\">Invalid or already activated yacht ID.</p>\n    <p>This link may have expired or the yacht has already been activated.</p>\n    <p style=\"margin-top: 32px; font-size: 14px; color: #999;\">Please contact support if you need assistance.</p>\n  </div>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "3212a309-01b5-483e-8d11-09868a9a8cf7",
+      "name": "Generate Error Page1",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -1640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3197a25b-745a-4f70-9cdd-47a50a2e46c8",
+      "name": "Respond Error Page1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return[\n  {\n    \"headers\": {\n      \"connection\": \"close\",\n      \"host\": \"api.celeste7.ai\",\n      \"x-real-ip\": \"98.58.226.220\",\n      \"x-forwarded-for\": \"98.58.226.220\",\n      \"x-forwarded-proto\": \"https\",\n      \"x-forwarded-host\": \"api.celeste7.ai\",\n      \"sec-ch-ua\": \"\\\"Google Chrome\\\";v=\\\"141\\\", \\\"Not?A_Brand\\\";v=\\\"8\\\", \\\"Chromium\\\";v=\\\"141\\\"\",\n      \"sec-ch-ua-mobile\": \"?0\",\n      \"sec-ch-ua-platform\": \"\\\"macOS\\\"\",\n      \"upgrade-insecure-requests\": \"1\",\n      \"user-agent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36\",\n      \"accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\",\n      \"sec-fetch-site\": \"none\",\n      \"sec-fetch-mode\": \"navigate\",\n      \"sec-fetch-user\": \"?1\",\n      \"sec-fetch-dest\": \"document\",\n      \"accept-encoding\": \"gzip, deflate, br, zstd\",\n      \"accept-language\": \"en-GB,en-US;q=0.9,en;q=0.8\",\n      \"priority\": \"u=0, i\",\n      \"cookie\": \"rl_page_init_referrer=RudderEncrypt%3AU2FsdGVkX18rFE0ZYP7iGuJfPkSxIBHGXC5TFiesRrc%3D; rl_page_init_referring_domain=RudderEncrypt%3AU2FsdGVkX1%2BtZzVDnK6nAr9wRsDFQvLv94uy4fIh3g8%3D; n8n-auth=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjFkYThlMDkxLWNhY2MtNGI2OC05YWViLTRiYWJlZWM2MjI1MSIsImhhc2giOiJqK2o4eWVlRmdKIiwiYnJvd3NlcklkIjoic01oZ1M2MU5GbGdTOFNRcXc5cHRwTEVwb05UaExicjRkRENLeGFwclRHST0iLCJpYXQiOjE3NjAyOTc0NTAsImV4cCI6MTc2MDkwMjI1MH0.q4yjz2m1p3ztP_q2eSS6MttoMz2zKo3PnDKYDNXKZ5E; rl_anonymous_id=RudderEncrypt%3AU2FsdGVkX1%2FJh6HUsbS7coSOpNP4QfulCNri%2Bka915aL9%2BxEzWfdn0m5zFo%2ByFQ8f9kibYJKW%2Fq1ZE6Bc%2BpgyQ%3D%3D; rl_user_id=RudderEncrypt%3AU2FsdGVkX1%2FVLPSUlk6wsHzXoPfyC0iJU8RLQNT%2BzCLSi%2Bm7eeGwoTZuge5pdfN%2Fb204blJk34%2Fx3c8WdIGVT2QHht03XJQ%2BSLRnNXUyfVLLro0Zgy0Dfee8h7GitKWRP%2BUh2iJJUEnWMCeo%2FgYUA23PDt1OZc2p40f8NGlhtwA%3D; rl_trait=RudderEncrypt%3AU2FsdGVkX1%2Bm6zQOq6fhhhPpRHgFN5QP2pg%2BxoSRkh98Ttm39HluQpJ1DeMq1VW%2FLKpeEUzhNJMN03YAwfq%2BszSaYj%2BhAjAjEsMzx95WENFh0pEwfAy3mvyvLNoFkw7UDPvVcu5GvbvUKJzKJD9Msg%3D%3D; ph_phc_4URIAm1uYfJO7j8kWSe0J8lc8IqnstRLS7Jx8NcakHo_posthog=%7B%22distinct_id%22%3A%226385a73eae1665b82318a3c042d3a51d9597ca6c6d39690ed8a47ce1aa6e47e3%231da8e091-cacc-4b68-9aeb-4babeec62251%22%2C%22%24sesid%22%3A%5B1760457153575%2C%220199e341-ea00-7aee-bb5d-99e1b867d50a%22%2C1760454371830%5D%2C%22%24epp%22%3Atrue%2C%22%24initial_person_info%22%3A%7B%22r%22%3A%22%24direct%22%2C%22u%22%3A%22https%3A%2F%2Fapi.celeste7.ai%2Fsignin%3Fredirect%3D%25252F%22%7D%7D; rl_session=RudderEncrypt%3AU2FsdGVkX1%2BYdnx6tA1FLWdb72EuJNvVUuARd4BXa2lXA%2Fe%2BSxUBnHJQL8qazcSJcMtD7VhRfdjsqbFLgB2K4MwgFkhye%2BFw1%2Bm0sXVDdNFlbTWpsgj47Tcg66P0qbXwJI9nHZcSiTyW3eI8zarL0g%3D%3D\"\n    },\n    \"params\": {\n      \"yacht_id\": \"MYSTIC_2025_001\"\n    },\n    \"query\": {},\n    \"body\": {},\n    \"webhookUrl\": \"https://api.celeste7.ai/webhook/yacht-activate-webhook-v2/activate/:yacht_id\",\n    \"executionMode\": \"production\"\n  }\n]\n;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2740,
+        -100
+      ],
+      "id": "a3a89c60-9949-4b22-8f93-ea1e653ab043",
+      "name": "typical incoming"
+    },
+    {
+      "parameters": {
+        "jsCode": "return[\n  {\n    \"headers\": {\n      \"connection\": \"close\",\n      \"host\": \"api.celeste7.ai\",\n      \"x-real-ip\": \"98.58.226.220\",\n      \"x-forwarded-for\": \"98.58.226.220\",\n      \"x-forwarded-proto\": \"https\",\n      \"x-forwarded-host\": \"api.celeste7.ai\",\n      \"content-length\": \"113\",\n      \"accept\": \"application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7\",\n      \"content-type\": \"application/json\",\n      \"user-agent\": \"axios/1.8.3\",\n      \"accept-encoding\": \"gzip, compress, deflate, br\"\n    },\n    \"params\": {},\n    \"query\": {},\n    \"body\": {\n      \"yacht_id\": \"MYSTIC_2025_001\",\n      \"yacht_id_hash\": \"83ba9141cf61d08d8b6eac5b934a20fb06a9f3b7cfe29488687f5590e329e0ce\"\n    },\n    \"webhookUrl\": \"https://api.celeste7.ai/webhook/register\",\n    \"executionMode\": \"production\"\n  }\n]\n;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2920,
+        -600
+      ],
+      "id": "cac1f41e-4929-493e-90dd-8257362f6f8c",
+      "name": "typical incoming1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Microsoft Outlook": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: POST /register": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Input Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Valid?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Yacht",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yacht Found?": {
+      "main": [
+        [
+          {
+            "node": "Validate Buyer Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Buyer Email": {
+      "main": [
+        [
+          {
+            "node": "Email Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Valid?": {
+      "main": [
+        [
+          {
+            "node": "Update Registration Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Registration Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email (XSS-Safe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email (XSS-Safe)": {
+      "main": [
+        [
+          {
+            "node": "Microsoft Outlook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: GET /check-activation/:yacht_id": {
+      "main": [
+        [
+          {
+            "node": "Validate Check Parameter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Check Parameter": {
+      "main": [
+        [
+          {
+            "node": "Check Parameter Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Parameter Valid?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clean Other Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Status": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Should Mark Retrieved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Mark Retrieved?": {
+      "main": [
+        [
+          {
+            "node": "Mark Credentials Retrieved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clean Other Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Credentials Retrieved": {
+      "main": [
+        [
+          {
+            "node": "Clean Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Other Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Other Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule: Daily Cleanup": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Abandoned Registrations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Yacht": {
+      "main": [
+        [
+          {
+            "node": "Yacht Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "typical incoming1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: GET /activate/:yacht_id1": {
+      "main": [
+        [
+          {
+            "node": "Validate yacht_id Parameter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate yacht_id Parameter1": {
+      "main": [
+        [
+          {
+            "node": "Parameter Valid?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parameter Valid?1": {
+      "main": [
+        [
+          {
+            "node": "Lookup for Activation1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Error Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup for Activation1": {
+      "main": [
+        [
+          {
+            "node": "Can Activate?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Activate?1": {
+      "main": [
+        [
+          {
+            "node": "Activate Yacht1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Error Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activate Yacht1": {
+      "main": [
+        [
+          {
+            "node": "Generate Success Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Success Page1": {
+      "main": [
+        [
+          {
+            "node": "Respond Success Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Error Page1": {
+      "main": [
+        [
+          {
+            "node": "Respond Error Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "typical incoming": {
+      "main": [
+        [
+          {
+            "node": "Validate yacht_id Parameter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "typical incoming1": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "552cec32-304a-4f33-8775-830b533e753a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6385a73eae1665b82318a3c042d3a51d9597ca6c6d39690ed8a47ce1aa6e47e3"
+  },
+  "id": "1wgVOFrcwSZ0xjrA",
+  "tags": []
+}

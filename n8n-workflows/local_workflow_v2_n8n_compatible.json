@@ -1,0 +1,160 @@
+{
+  "name": "Signature_Installer_Local_v2_N8N_COMPATIBLE",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-start",
+      "name": "Start Registration",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Hardcoded yacht configuration\n// In production, this would be read from /etc/celeste/config.json\n\nconst config = {\n  yacht_id: 'MYSTIC_2025_001',\n  yacht_id_hash: '4406837f9f02afb8a0cb6328fee0346092af91b685261418580118ec27f966f6',\n  yacht_name: 'M/Y Mystic',\n  api_endpoint: 'https://api.celeste7.ai'\n};\n\n// Pass config to next node\nreturn {\n  json: config\n};"
+      },
+      "id": "load-config",
+      "name": "Load Config (Hardcoded)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.api_endpoint }}/register",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ yacht_id: $json.yacht_id, yacht_id_hash: $json.yacht_id_hash }) }}",
+        "options": {}
+      },
+      "id": "register-yacht",
+      "name": "Register Yacht",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check registration response\nconst response = $input.item.json;\nconst config = $('Load Config (Hardcoded)').item.json;\n\nif (!response.success) {\n  throw new Error('Registration failed: ' + (response.message || 'Unknown error'));\n}\n\n// Prepare for polling\nreturn {\n  json: {\n    yacht_id: config.yacht_id,\n    api_endpoint: config.api_endpoint,\n    poll_count: 0,\n    max_polls: 60, // 30 minutes (30s intervals)\n    registration_response: response\n  }\n};"
+      },
+      "id": "prepare-polling",
+      "name": "Prepare Polling",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.api_endpoint }}/check-activation/{{ $json.yacht_id }}",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "check-activation",
+      "name": "Check Activation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check activation status\nconst response = $input.item.json;\nconst prevData = $('Prepare Polling').item.json;\n\nif (response.status === 'active' && response.shared_secret) {\n  // Success! Yacht is activated\n  return {\n    json: {\n      success: true,\n      credentials: {\n        yacht_id: response.yacht_id,\n        yacht_id_hash: response.yacht_id_hash,\n        shared_secret: response.shared_secret,\n        activated_at: response.activated_at\n      },\n      poll_count: prevData.poll_count + 1\n    }\n  };\n} else if (response.status === 'already_retrieved') {\n  throw new Error('Credentials have already been retrieved for this yacht');\n} else if (response.status === 'invalid') {\n  throw new Error('Invalid yacht ID: ' + response.message);\n} else if (response.status === 'pending') {\n  // Still waiting - check if we should continue polling\n  const newCount = prevData.poll_count + 1;\n  \n  if (newCount >= prevData.max_polls) {\n    throw new Error(`Activation timeout: No response after ${newCount * 30} seconds`);\n  }\n  \n  // Continue polling\n  return {\n    json: {\n      success: false,\n      status: 'pending',\n      poll_count: newCount,\n      max_polls: prevData.max_polls,\n      yacht_id: prevData.yacht_id,\n      api_endpoint: prevData.api_endpoint,\n      message: `Waiting for activation... (attempt ${newCount}/${prevData.max_polls})`\n    }\n  };\n}\n\n// Unknown status\nthrow new Error('Unknown activation status: ' + response.status);"
+      },
+      "id": "check-status",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-activated",
+      "name": "Is Activated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 30
+      },
+      "id": "wait-30s",
+      "name": "Wait 30s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1560, 480],
+      "webhookId": "wait-activation-poll"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format credentials for display/storage\nconst credentials = $json.credentials;\n\n// In production, these would be saved to:\n// - Local database: INSERT INTO local_identity\n// - Filesystem: /data/yacht_credentials.json (mode 0600)\n\nconst output = {\n  success: true,\n  message: 'Yacht successfully registered and activated!',\n  yacht_id: credentials.yacht_id,\n  credentials_received: true,\n  activated_at: credentials.activated_at,\n  // NOTE: In production, write these to secure storage:\n  credentials: {\n    yacht_id: credentials.yacht_id,\n    yacht_id_hash: credentials.yacht_id_hash,\n    shared_secret: credentials.shared_secret,\n    activated_at: credentials.activated_at\n  }\n};\n\nreturn { json: output };"
+      },
+      "id": "save-credentials",
+      "name": "Save Credentials",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1780, 220]
+    }
+  ],
+  "connections": {
+    "Start Registration": {
+      "main": [[{ "node": "Load Config (Hardcoded)", "type": "main", "index": 0 }]]
+    },
+    "Load Config (Hardcoded)": {
+      "main": [[{ "node": "Register Yacht", "type": "main", "index": 0 }]]
+    },
+    "Register Yacht": {
+      "main": [[{ "node": "Prepare Polling", "type": "main", "index": 0 }]]
+    },
+    "Prepare Polling": {
+      "main": [[{ "node": "Check Activation", "type": "main", "index": 0 }]]
+    },
+    "Check Activation": {
+      "main": [[{ "node": "Check Status", "type": "main", "index": 0 }]]
+    },
+    "Check Status": {
+      "main": [[{ "node": "Is Activated?", "type": "main", "index": 0 }]]
+    },
+    "Is Activated?": {
+      "main": [
+        [{ "node": "Save Credentials", "type": "main", "index": 0 }],
+        [{ "node": "Wait 30s", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 30s": {
+      "main": [[{ "node": "Check Activation", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v2-n8n-compatible",
+  "meta": {
+    "instanceId": "celeste7-local-v2-n8n-compatible"
+  },
+  "id": "local_v2_n8n_compatible",
+  "tags": ["yacht", "identity", "v2", "n8n", "local"]
+}

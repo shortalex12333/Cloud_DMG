@@ -1,0 +1,725 @@
+{
+  "name": "Signature_Installer_Cloud_v2_FIXED",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "register",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-register",
+      "name": "Webhook: POST /register",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-380, 480],
+      "webhookId": "yacht-register-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and sanitize input\nconst body = $json.body || {};\nconst yachtId = body.yacht_id;\nconst yachtIdHash = body.yacht_id_hash;\n\n// Input validation\nconst errors = [];\n\nif (!yachtId || typeof yachtId !== 'string') {\n  errors.push('yacht_id is required and must be a string');\n} else if (!/^[A-Z0-9_-]+$/.test(yachtId)) {\n  errors.push('yacht_id contains invalid characters (only A-Z, 0-9, _, - allowed)');\n} else if (yachtId.length > 50) {\n  errors.push('yacht_id too long (max 50 characters)');\n}\n\nif (!yachtIdHash || typeof yachtIdHash !== 'string') {\n  errors.push('yacht_id_hash is required and must be a string');\n} else if (!/^[a-f0-9]{64}$/.test(yachtIdHash)) {\n  errors.push('yacht_id_hash must be a valid 64-character hex string (SHA-256)');\n}\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      valid: false,\n      errors: errors\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId,\n    yacht_id_hash: yachtIdHash\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [-160, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "input-valid",
+      "name": "Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [60, 480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  yacht_id,\n  yacht_id_hash,\n  buyer_email,\n  active,\n  credentials_retrieved\nFROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}' \n  AND yacht_id_hash = '{{ $json.yacht_id_hash }}'\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently",
+          "nodeVersion": 2,
+          "alwaysOutputData": true
+        }
+      },
+      "id": "lookup-yacht",
+      "name": "Lookup Yacht",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [280, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{$json.yacht_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "yacht-found",
+      "name": "Yacht Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check buyer_email validity\nconst registration = $json;\nconst buyerEmail = registration.buyer_email;\n\nif (!buyerEmail) {\n  return [{\n    json: {\n      valid: false,\n      error: 'no_buyer_email',\n      message: 'This yacht has no buyer email configured. Please contact support.'\n    }\n  }];\n}\n\n// Basic email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!emailRegex.test(buyerEmail)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'invalid_buyer_email',\n      message: 'Buyer email is invalid. Please contact support.'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    ...registration\n  }\n}];"
+      },
+      "id": "validate-buyer-email",
+      "name": "Validate Buyer Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [720, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "email-valid",
+      "name": "Email Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [940, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET registered_at = NOW()\nWHERE yacht_id = '{{ $json.yacht_id }}'\nRETURNING *;",
+        "options": {}
+      },
+      "id": "update-registration",
+      "name": "Update Registration Timestamp",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1160, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare activation email with XSS-safe content\nconst registration = $json;\nconst yachtId = registration.yacht_id;\nconst buyerEmail = registration.buyer_email;\n\n// HTML escape function\nconst escapeHtml = (str) => {\n  return String(str)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#039;');\n};\n\nconst yachtIdSafe = escapeHtml(yachtId);\nconst activationLink = `https://celeste7.ai/activate/${encodeURIComponent(yachtId)}`;\n\nconst emailData = {\n  to: buyerEmail,\n  subject: `Activate Your Yacht: ${yachtIdSafe}`,\n  html: `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 40px; }\n    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }\n    .header { text-align: center; margin-bottom: 30px; }\n    .logo { font-size: 32px; font-weight: bold; color: #0066cc; }\n    h2 { color: #333; margin-bottom: 20px; }\n    .yacht-name { color: #0066cc; font-weight: bold; }\n    .button { display: inline-block; background: #0066cc; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; margin: 20px 0; }\n    .code { font-family: 'Courier New', monospace; background: #f0f0f0; padding: 8px 12px; border-radius: 4px; display: inline-block; margin: 10px 0; }\n    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"logo\">⚓ Celeste7</div>\n    </div>\n    <h2>Yacht Registration Confirmation</h2>\n    <p>Your yacht <span class=\"yacht-name\">${yachtIdSafe}</span> is requesting activation.</p>\n    <p>Click the button below to activate your yacht:</p>\n    <div style=\"text-align: center;\">\n      <a href=\"${activationLink}\" class=\"button\">Activate Yacht</a>\n    </div>\n    <p>Or copy this link:</p>\n    <div class=\"code\">${activationLink}</div>\n    <div class=\"footer\">\n      <p>Yacht ID: <span class=\"code\">${yachtIdSafe}</span></p>\n      <p>If you didn't request this, please ignore this email.</p>\n    </div>\n  </div>\n</body>\n</html>`,\n  text: `Yacht Registration Confirmation\\n\\nYour yacht ${yachtId} is requesting activation.\\n\\nActivation link: ${activationLink}\\n\\nYacht ID: ${yachtId}\\n\\nIf you didn't request this activation, please ignore this email.`\n};\n\nreturn [{\n  json: {\n    ...emailData,\n    yacht_id: yachtId,\n    activation_link: activationLink,\n    yacht_id_hash: registration.yacht_id_hash\n  }\n}];"
+      },
+      "id": "prepare-email",
+      "name": "Prepare Email (XSS-Safe)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1380, 240]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@celeste7.ai",
+        "toEmail": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "text": "={{$json.text}}",
+        "options": {
+          "appendAttribution": false,
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "send-email",
+      "name": "Send Activation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1600, 240],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare success response\nconst prevNode = $('Prepare Email (XSS-Safe)').item.json;\n\nconst response = {\n  success: true,\n  yacht_id: prevNode.yacht_id,\n  activation_link: prevNode.activation_link,\n  message: 'Registration successful. Check your email for activation link.',\n  status: 'pending_activation'\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "format-success-response",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1820, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2040, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format error responses\nconst error = $json.error || 'unknown_error';\nconst message = $json.message || 'An error occurred';\nconst errors = $json.errors;\n\nconst response = {\n  success: false,\n  error: error,\n  message: message\n};\n\nif (errors) {\n  response.errors = errors;\n}\n\nreturn [{ json: response }];"
+      },
+      "id": "format-error-response",
+      "name": "Format Error Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [720, 560]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": "={{ $json.error === 'yacht_not_found' ? 404 : 400 }}"
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 560]
+    },
+    {
+      "parameters": {
+        "path": "activate/:yacht_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-activate",
+      "name": "Webhook: GET /activate/:yacht_id",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-380, 880],
+      "webhookId": "yacht-activate-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate yacht_id parameter\nconst yachtId = $json.params.yacht_id;\n\nif (!yachtId || !/^[A-Z0-9_-]+$/.test(yachtId)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'Invalid yacht ID format'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId\n  }\n}];"
+      },
+      "id": "validate-yacht-id-param",
+      "name": "Validate yacht_id Parameter",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [-160, 880]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "param-valid",
+      "name": "Parameter Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [60, 880]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}' AND active = false\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently",
+          "nodeVersion": 2,
+          "alwaysOutputData": true
+        }
+      },
+      "id": "lookup-for-activation",
+      "name": "Lookup for Activation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [280, 800]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{$json.yacht_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "can-activate",
+      "name": "Can Activate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 800]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET \n  active = true,\n  activated_at = NOW(),\n  shared_secret = encode(gen_random_bytes(32), 'hex')\nWHERE yacht_id = '{{ $json.yacht_id }}'\nRETURNING *;",
+        "options": {
+          "queryBatching": "independently",
+          "nodeVersion": 2
+        }
+      },
+      "id": "activate-yacht",
+      "name": "Activate Yacht",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [940, 720]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate success HTML with XSS protection\nconst yachtId = $json.yacht_id;\nconst escapeHtml = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst yachtIdSafe = escapeHtml(yachtId);\n\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Yacht Activated</title>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 16px; padding: 48px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; max-width: 500px; animation: slideIn 0.5s ease-out; }\n    @keyframes slideIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }\n    .icon { font-size: 72px; margin-bottom: 24px; }\n    h1 { color: #333; margin-bottom: 16px; font-size: 32px; }\n    p { color: #666; font-size: 18px; line-height: 1.6; margin-bottom: 12px; }\n    .yacht-id { font-family: 'Courier New', monospace; background: #f0f0f0; padding: 12px 20px; border-radius: 8px; display: inline-block; margin: 20px 0; font-weight: bold; color: #0066cc; }\n    .success { color: #10b981; font-weight: 600; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"icon\">⚓</div>\n    <h1>Yacht Activated!</h1>\n    <p class=\"success\">Your yacht has been successfully activated.</p>\n    <div class=\"yacht-id\">${yachtIdSafe}</div>\n    <p>Your yacht is now authorized to communicate with Celeste7 Cloud.</p>\n    <p style=\"margin-top: 32px; font-size: 14px; color: #999;\">You can close this window.</p>\n  </div>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "generate-success-page",
+      "name": "Generate Success Page",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1160, 720]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success-page",
+      "name": "Respond Success Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1380, 720]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate error HTML\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Activation Error</title>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }\n    .container { background: white; border-radius: 16px; padding: 48px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; max-width: 500px; }\n    .icon { font-size: 72px; margin-bottom: 24px; }\n    h1 { color: #333; margin-bottom: 16px; font-size: 32px; }\n    p { color: #666; font-size: 18px; line-height: 1.6; }\n    .error { color: #ef4444; font-weight: 600; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"icon\">⚠️</div>\n    <h1>Activation Error</h1>\n    <p class=\"error\">Invalid or already activated yacht ID.</p>\n    <p>This link may have expired or the yacht has already been activated.</p>\n    <p style=\"margin-top: 32px; font-size: 14px; color: #999;\">Please contact support if you need assistance.</p>\n  </div>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];"
+      },
+      "id": "generate-error-page",
+      "name": "Generate Error Page",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [720, 960]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error-page",
+      "name": "Respond Error Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 960]
+    },
+    {
+      "parameters": {
+        "path": "check-activation/:yacht_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-check",
+      "name": "Webhook: GET /check-activation/:yacht_id",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-380, 1240],
+      "webhookId": "yacht-check-activation-webhook-v2"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate yacht_id parameter\nconst yachtId = $json.params.yacht_id;\n\nif (!yachtId || !/^[A-Z0-9_-]+$/.test(yachtId)) {\n  return [{\n    json: {\n      valid: false,\n      error: 'Invalid yacht ID format'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    valid: true,\n    yacht_id: yachtId\n  }\n}];"
+      },
+      "id": "validate-check-param",
+      "name": "Validate Check Parameter",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [-160, 1240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$json.valid}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-param-valid",
+      "name": "Check Parameter Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [60, 1240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT \n  yacht_id,\n  yacht_id_hash,\n  shared_secret,\n  active,\n  credentials_retrieved,\n  activated_at\nFROM fleet_registry \nWHERE yacht_id = '{{ $json.yacht_id }}'\nLIMIT 1;",
+        "options": {
+          "queryBatching": "independently",
+          "nodeVersion": 2,
+          "alwaysOutputData": true
+        }
+      },
+      "id": "lookup-status",
+      "name": "Lookup Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [280, 1160]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check activation status\nconst yachtId = $('Validate Check Parameter').item.json.yacht_id;\n\nif (!$json.yacht_id) {\n  return [{\n    json: {\n      status: 'invalid',\n      message: 'Invalid yacht ID'\n    }\n  }];\n}\n\nconst registration = $json;\n\nif (registration.active) {\n  if (registration.credentials_retrieved) {\n    return [{\n      json: {\n        status: 'already_retrieved',\n        message: 'Credentials have already been retrieved',\n        activated_at: registration.activated_at\n      }\n    }];\n  }\n  \n  // Return credentials ONE TIME ONLY\n  return [{\n    json: {\n      status: 'active',\n      yacht_id: registration.yacht_id,\n      yacht_id_hash: registration.yacht_id_hash,\n      shared_secret: registration.shared_secret,\n      activated_at: registration.activated_at,\n      _mark_retrieved: true\n    }\n  }];\n} else {\n  return [{\n    json: {\n      status: 'pending',\n      message: 'Waiting for owner activation',\n      yacht_id: yachtId\n    }\n  }];\n}"
+      },
+      "id": "check-status",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [500, 1160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should_mark",
+              "leftValue": "={{$json._mark_retrieved}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "should-mark-retrieved",
+      "name": "Should Mark Retrieved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 1160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE fleet_registry\nSET credentials_retrieved = true\nWHERE yacht_id = '{{ $json.yacht_id }}';",
+        "options": {}
+      },
+      "id": "mark-retrieved",
+      "name": "Mark Credentials Retrieved",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [940, 1080]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Remove internal flag before responding\nconst response = { ...$('Check Status').item.json };\ndelete response._mark_retrieved;\nreturn [{ json: response }];"
+      },
+      "id": "clean-response",
+      "name": "Clean Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1160, 1080]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-status",
+      "name": "Respond Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1380, 1080]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Remove internal flag for other statuses\nconst response = { ...$json };\ndelete response._mark_retrieved;\nreturn [{ json: response }];"
+      },
+      "id": "clean-other-response",
+      "name": "Clean Other Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [940, 1240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-other-status",
+      "name": "Respond Other Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1160, 1240]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cleanup-schedule",
+      "name": "Schedule: Daily Cleanup",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-380, 1480]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM fleet_registry\nWHERE active = false \n  AND registered_at IS NOT NULL \n  AND registered_at < NOW() - INTERVAL '7 days'\nRETURNING yacht_id;",
+        "options": {}
+      },
+      "id": "cleanup-abandoned",
+      "name": "Cleanup Abandoned Registrations",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-160, 1480]
+    }
+  ],
+  "connections": {
+    "Webhook: POST /register": {
+      "main": [[{ "node": "Validate Input", "type": "main", "index": 0 }]]
+    },
+    "Validate Input": {
+      "main": [[{ "node": "Input Valid?", "type": "main", "index": 0 }]]
+    },
+    "Input Valid?": {
+      "main": [
+        [{ "node": "Lookup Yacht", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup Yacht": {
+      "main": [[{ "node": "Yacht Found?", "type": "main", "index": 0 }]]
+    },
+    "Yacht Found?": {
+      "main": [
+        [{ "node": "Validate Buyer Email", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Buyer Email": {
+      "main": [[{ "node": "Email Valid?", "type": "main", "index": 0 }]]
+    },
+    "Email Valid?": {
+      "main": [
+        [{ "node": "Update Registration Timestamp", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Registration Timestamp": {
+      "main": [[{ "node": "Prepare Email (XSS-Safe)", "type": "main", "index": 0 }]]
+    },
+    "Prepare Email (XSS-Safe)": {
+      "main": [[{ "node": "Send Activation Email", "type": "main", "index": 0 }]]
+    },
+    "Send Activation Email": {
+      "main": [[{ "node": "Format Success Response", "type": "main", "index": 0 }]]
+    },
+    "Format Success Response": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Format Error Response": {
+      "main": [[{ "node": "Respond Error", "type": "main", "index": 0 }]]
+    },
+    "Webhook: GET /activate/:yacht_id": {
+      "main": [[{ "node": "Validate yacht_id Parameter", "type": "main", "index": 0 }]]
+    },
+    "Validate yacht_id Parameter": {
+      "main": [[{ "node": "Parameter Valid?", "type": "main", "index": 0 }]]
+    },
+    "Parameter Valid?": {
+      "main": [
+        [{ "node": "Lookup for Activation", "type": "main", "index": 0 }],
+        [{ "node": "Generate Error Page", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup for Activation": {
+      "main": [[{ "node": "Can Activate?", "type": "main", "index": 0 }]]
+    },
+    "Can Activate?": {
+      "main": [
+        [{ "node": "Activate Yacht", "type": "main", "index": 0 }],
+        [{ "node": "Generate Error Page", "type": "main", "index": 0 }]
+      ]
+    },
+    "Activate Yacht": {
+      "main": [[{ "node": "Generate Success Page", "type": "main", "index": 0 }]]
+    },
+    "Generate Success Page": {
+      "main": [[{ "node": "Respond Success Page", "type": "main", "index": 0 }]]
+    },
+    "Generate Error Page": {
+      "main": [[{ "node": "Respond Error Page", "type": "main", "index": 0 }]]
+    },
+    "Webhook: GET /check-activation/:yacht_id": {
+      "main": [[{ "node": "Validate Check Parameter", "type": "main", "index": 0 }]]
+    },
+    "Validate Check Parameter": {
+      "main": [[{ "node": "Check Parameter Valid?", "type": "main", "index": 0 }]]
+    },
+    "Check Parameter Valid?": {
+      "main": [
+        [{ "node": "Lookup Status", "type": "main", "index": 0 }],
+        [{ "node": "Clean Other Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup Status": {
+      "main": [[{ "node": "Check Status", "type": "main", "index": 0 }]]
+    },
+    "Check Status": {
+      "main": [[{ "node": "Should Mark Retrieved?", "type": "main", "index": 0 }]]
+    },
+    "Should Mark Retrieved?": {
+      "main": [
+        [{ "node": "Mark Credentials Retrieved", "type": "main", "index": 0 }],
+        [{ "node": "Clean Other Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark Credentials Retrieved": {
+      "main": [[{ "node": "Clean Response", "type": "main", "index": 0 }]]
+    },
+    "Clean Response": {
+      "main": [[{ "node": "Respond Status", "type": "main", "index": 0 }]]
+    },
+    "Clean Other Response": {
+      "main": [[{ "node": "Respond Other Status", "type": "main", "index": 0 }]]
+    },
+    "Schedule: Daily Cleanup": {
+      "main": [[{ "node": "Cleanup Abandoned Registrations", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v2-fixed",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "cloud_v2_fixed",
+  "tags": ["yacht", "identity", "v2", "fixed", "secure"]
+}

@@ -1,0 +1,952 @@
+{
+  "name": "Portal_Cloud",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-login",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "905b38f2-0fc3-45d5-9ca4-7535a6ee50ca",
+      "name": "Webhook - User Login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        -80
+      ],
+      "webhookId": "8f48bed7-c115-4b43-aa3d-d7ebd9d8471d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pure JavaScript SHA-256 implementation\nfunction sha256(str) {\n  function rightRotate(value, amount) {\n    return (value >>> amount) | (value << (32 - amount));\n  }\n  \n  const K = [\n    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2\n  ];\n  \n  let H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  \n  const msg = unescape(encodeURIComponent(str));\n  const msgLength = msg.length;\n  const words = [];\n  \n  for (let i = 0; i < msgLength; i++) {\n    words[i >> 2] |= msg.charCodeAt(i) << (24 - (i % 4) * 8);\n  }\n  \n  words[msgLength >> 2] |= 0x80 << (24 - (msgLength % 4) * 8);\n  words[(((msgLength + 8) >> 6) << 4) + 15] = msgLength * 8;\n  \n  for (let i = 0; i < words.length; i += 16) {\n    const W = [];\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    \n    for (let j = 0; j < 64; j++) {\n      if (j < 16) {\n        W[j] = words[i + j] || 0;\n      } else {\n        const s0 = rightRotate(W[j - 15], 7) ^ rightRotate(W[j - 15], 18) ^ (W[j - 15] >>> 3);\n        const s1 = rightRotate(W[j - 2], 17) ^ rightRotate(W[j - 2], 19) ^ (W[j - 2] >>> 10);\n        W[j] = (W[j - 16] + s0 + W[j - 7] + s1) | 0;\n      }\n      \n      const S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);\n      const ch = (e & f) ^ (~e & g);\n      const temp1 = (h + S1 + ch + K[j] + W[j]) | 0;\n      const S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const temp2 = (S0 + maj) | 0;\n      \n      h = g;\n      g = f;\n      f = e;\n      e = (d + temp1) | 0;\n      d = c;\n      c = b;\n      b = a;\n      a = (temp1 + temp2) | 0;\n    }\n    \n    H[0] = (H[0] + a) | 0;\n    H[1] = (H[1] + b) | 0;\n    H[2] = (H[2] + c) | 0;\n    H[3] = (H[3] + d) | 0;\n    H[4] = (H[4] + e) | 0;\n    H[5] = (H[5] + f) | 0;\n    H[6] = (H[6] + g) | 0;\n    H[7] = (H[7] + h) | 0;\n  }\n  \n  return H.map(h => ('00000000' + h.toString(16)).slice(-8)).join('');\n}\n\n// Extract data from webhook body\nconst userId = $json.body.user_id;\nconst email = $json.body.email;\n\n// Generate random 6-digit 2FA code\nconst code = Math.floor(100000 + Math.random() * 900000).toString();\n\n// Hash the code with SHA-256\nconst codeHash = sha256(code);\n\n// Return data\nreturn [{\n  json: {\n    user_id: userId,\n    email: email,\n    code: code,\n    code_hash: codeHash,\n    purpose: \"login\",\n    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes\n    attempts: 0,\n    max_attempts: 3\n  }\n}];"
+      },
+      "id": "526e6945-7d9a-4f2e-b9bf-8f769862acd5",
+      "name": "Generate 2FA Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "twofa_codes",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $json.user_id }}"
+            },
+            {
+              "fieldId": "code",
+              "fieldValue": "={{ $json.code }}"
+            },
+            {
+              "fieldId": "code_hash",
+              "fieldValue": "={{ $json.code_hash }}"
+            },
+            {
+              "fieldId": "purpose",
+              "fieldValue": "login"
+            },
+            {
+              "fieldId": "expires_at",
+              "fieldValue": "={{ $json.expires_at }}"
+            },
+            {
+              "fieldId": "attempts",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "max_attempts",
+              "fieldValue": "3"
+            }
+          ]
+        }
+      },
+      "id": "9282c019-1ff5-4220-889b-28bf9d391341",
+      "name": "Insert 2FA Code",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        160,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"awaiting_2fa\", \"user_id\": $json.user_id, \"message\": \"2FA code sent to email\" } }}",
+        "options": {}
+      },
+      "id": "3651348e-95a9-4af9-8f4d-5dd337f22ed2",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "verify-2fa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4cb47e9a-f9c5-4134-9af9-e16f9d7886d4",
+      "name": "Webhook - Verify 2FA",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        355
+      ],
+      "webhookId": "1e5b6648-9491-41ce-a940-2e6edee89169"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pure JavaScript SHA-256 implementation\nfunction sha256(str) {\n  function rightRotate(value, amount) {\n    return (value >>> amount) | (value << (32 - amount));\n  }\n  \n  const K = [\n    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2\n  ];\n  \n  let H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  \n  const msg = unescape(encodeURIComponent(str));\n  const msgLength = msg.length;\n  const words = [];\n  \n  for (let i = 0; i < msgLength; i++) {\n    words[i >> 2] |= msg.charCodeAt(i) << (24 - (i % 4) * 8);\n  }\n  \n  words[msgLength >> 2] |= 0x80 << (24 - (msgLength % 4) * 8);\n  words[(((msgLength + 8) >> 6) << 4) + 15] = msgLength * 8;\n  \n  for (let i = 0; i < words.length; i += 16) {\n    const W = [];\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    \n    for (let j = 0; j < 64; j++) {\n      if (j < 16) {\n        W[j] = words[i + j] || 0;\n      } else {\n        const s0 = rightRotate(W[j - 15], 7) ^ rightRotate(W[j - 15], 18) ^ (W[j - 15] >>> 3);\n        const s1 = rightRotate(W[j - 2], 17) ^ rightRotate(W[j - 2], 19) ^ (W[j - 2] >>> 10);\n        W[j] = (W[j - 16] + s0 + W[j - 7] + s1) | 0;\n      }\n      \n      const S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);\n      const ch = (e & f) ^ (~e & g);\n      const temp1 = (h + S1 + ch + K[j] + W[j]) | 0;\n      const S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const temp2 = (S0 + maj) | 0;\n      \n      h = g;\n      g = f;\n      f = e;\n      e = (d + temp1) | 0;\n      d = c;\n      c = b;\n      b = a;\n      a = (temp1 + temp2) | 0;\n    }\n    \n    H[0] = (H[0] + a) | 0;\n    H[1] = (H[1] + b) | 0;\n    H[2] = (H[2] + c) | 0;\n    H[3] = (H[3] + d) | 0;\n    H[4] = (H[4] + e) | 0;\n    H[5] = (H[5] + f) | 0;\n    H[6] = (H[6] + g) | 0;\n    H[7] = (H[7] + h) | 0;\n  }\n  \n  return H.map(h => ('00000000' + h.toString(16)).slice(-8)).join('');\n}\n\n// Extract data from webhook body\nconst userId = $json.body.user_id;\nconst inputCode = $json.body.code;\n\n// Hash the input code\nconst codeHash = sha256(inputCode);\n\nreturn [{\n  json: {\n    user_id: userId,\n    code_hash: codeHash\n  }\n}];"
+      },
+      "id": "01831a22-af87-45c7-88e2-da008258ab5c",
+      "name": "Hash Input Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        355
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "twofa_codes",
+        "limit": 1,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.user_id }}"
+            },
+            {
+              "keyName": "code_hash",
+              "condition": "eq",
+              "keyValue": "={{ $json.code_hash }}"
+            },
+            {
+              "keyName": "purpose",
+              "condition": "eq",
+              "keyValue": "login"
+            },
+            {
+              "keyName": "used_at",
+              "condition": "is",
+              "keyValue": "null"
+            }
+          ]
+        }
+      },
+      "id": "db7fce36-be20-423e-ab16-e55ced349882",
+      "name": "Query 2FA Code",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        160,
+        355
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "7d5a32fd-b6ef-4e4b-ad05-88045990b7db",
+      "name": "Check Code Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        380,
+        355
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if code expired\nconst expiresAt = new Date($json.expires_at);\nconst now = new Date();\n\nif (now > expiresAt) {\n  throw new Error('2FA code has expired');\n}\n\n// Check attempts\nif ($json.attempts >= $json.max_attempts) {\n  throw new Error('Too many failed attempts');\n}\n\nreturn [{json: $json}];"
+      },
+      "id": "2e673d47-b957-468e-8793-68afc9378653",
+      "name": "Validate Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        255
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "twofa_codes",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "used_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "91ef5b43-c104-41ae-8816-8aa0e2bb3936",
+      "name": "Mark Code Used",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        820,
+        255
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate secure random session token (32 bytes = 64 hex chars)\nfunction generateRandomToken(length) {\n  const chars = '0123456789abcdef';\n  let token = '';\n  for (let i = 0; i < length; i++) {\n    token += chars.charAt(Math.floor(Math.random() * chars.length));\n  }\n  return token;\n}\n\nconst sessionToken = generateRandomToken(64); // 32 bytes in hex\n\nreturn [{\n  json: {\n    user_id: $json.user_id,\n    session_token: sessionToken,\n    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days\n  }\n}];"
+      },
+      "id": "1575a6f9-4fe0-4691-beea-3a35d4c78d78",
+      "name": "Generate Session Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        255
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "user_sessions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $json.user_id }}"
+            },
+            {
+              "fieldId": "session_token",
+              "fieldValue": "={{ $json.session_token }}"
+            },
+            {
+              "fieldId": "expires_at",
+              "fieldValue": "={{ $json.expires_at }}"
+            },
+            {
+              "fieldId": "ip_address",
+              "fieldValue": "={{ $('Webhook - Verify 2FA').item.json.headers['x-forwarded-for'] || '127.0.0.1' }}"
+            },
+            {
+              "fieldId": "revoked",
+              "fieldValue": "false"
+            }
+          ]
+        }
+      },
+      "id": "a83e1b2d-1507-483a-b761-51aff06994db",
+      "name": "Create Session",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        255
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Invalid or expired 2FA code\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "20731da6-272a-49fd-a682-e4f5b2f1dff9",
+      "name": "Respond - Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        600,
+        455
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"session_token\": $json.session_token, \"user_id\": $json.user_id } }}",
+        "options": {}
+      },
+      "id": "272ea8d7-3ec3-4314-9fc9-458baf75238d",
+      "name": "Respond - Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        255
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "download-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c16cbc84-d47c-4ce7-ab36-189085d076d7",
+      "name": "Webhook - Download Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        880
+      ],
+      "webhookId": "afd493e2-a564-4ce5-a3f5-38253f91311c"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "user_sessions",
+        "limit": 1,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "session_token",
+              "condition": "eq",
+              "keyValue": "={{ $json.body.session_token }}"
+            },
+            {
+              "keyName": "revoked",
+              "condition": "eq",
+              "keyValue": "false"
+            }
+          ]
+        }
+      },
+      "id": "3ea6c159-919c-4777-9250-6e75f8b001f2",
+      "name": "Validate Session",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        880
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "b929c3bd-0b72-415b-b08b-a7139f6b71a3",
+      "name": "Check Session Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        160,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if session expired\nconst expiresAt = new Date($json.expires_at);\nconst now = new Date();\n\nif (now > expiresAt) {\n  throw new Error('Session has expired');\n}\n\nreturn [{json: { user_id: $json.user_id }}];"
+      },
+      "id": "15d9bd0e-e897-43f4-a336-c6fd88aab7c6",
+      "name": "Check Session Expiration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "user_accounts",
+        "limit": 1,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.user_id }}"
+            }
+          ]
+        }
+      },
+      "id": "0d299a1e-6b82-41b2-b060-5ceff2de4bac",
+      "name": "Get User Yacht",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        600,
+        780
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pure JavaScript SHA-256 implementation\nfunction sha256(str) {\n  function rightRotate(value, amount) {\n    return (value >>> amount) | (value << (32 - amount));\n  }\n  \n  const K = [\n    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2\n  ];\n  \n  let H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  \n  const msg = unescape(encodeURIComponent(str));\n  const msgLength = msg.length;\n  const words = [];\n  \n  for (let i = 0; i < msgLength; i++) {\n    words[i >> 2] |= msg.charCodeAt(i) << (24 - (i % 4) * 8);\n  }\n  \n  words[msgLength >> 2] |= 0x80 << (24 - (msgLength % 4) * 8);\n  words[(((msgLength + 8) >> 6) << 4) + 15] = msgLength * 8;\n  \n  for (let i = 0; i < words.length; i += 16) {\n    const W = [];\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    \n    for (let j = 0; j < 64; j++) {\n      if (j < 16) {\n        W[j] = words[i + j] || 0;\n      } else {\n        const s0 = rightRotate(W[j - 15], 7) ^ rightRotate(W[j - 15], 18) ^ (W[j - 15] >>> 3);\n        const s1 = rightRotate(W[j - 2], 17) ^ rightRotate(W[j - 2], 19) ^ (W[j - 2] >>> 10);\n        W[j] = (W[j - 16] + s0 + W[j - 7] + s1) | 0;\n      }\n      \n      const S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);\n      const ch = (e & f) ^ (~e & g);\n      const temp1 = (h + S1 + ch + K[j] + W[j]) | 0;\n      const S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const temp2 = (S0 + maj) | 0;\n      \n      h = g;\n      g = f;\n      f = e;\n      e = (d + temp1) | 0;\n      d = c;\n      c = b;\n      b = a;\n      a = (temp1 + temp2) | 0;\n    }\n    \n    H[0] = (H[0] + a) | 0;\n    H[1] = (H[1] + b) | 0;\n    H[2] = (H[2] + c) | 0;\n    H[3] = (H[3] + d) | 0;\n    H[4] = (H[4] + e) | 0;\n    H[5] = (H[5] + f) | 0;\n    H[6] = (H[6] + g) | 0;\n    H[7] = (H[7] + h) | 0;\n  }\n  \n  return H.map(h => ('00000000' + h.toString(16)).slice(-8)).join('');\n}\n\n// Generate secure random download token (32 bytes = 64 hex chars)\nfunction generateRandomToken(length) {\n  const chars = '0123456789abcdef';\n  let token = '';\n  for (let i = 0; i < length; i++) {\n    token += chars.charAt(Math.floor(Math.random() * chars.length));\n  }\n  return token;\n}\n\n// Check if we have data\nif (!$json || !$json.yacht_id) {\n  throw new Error('No yacht_id found for user');\n}\n\nconst yachtId = $json.yacht_id;\n\n// Generate yacht_id hash using SHA-256\nconst yachtIdHash = sha256(yachtId);\n\n// Generate secure random download token\nconst downloadToken = generateRandomToken(64);\n\n// Generate 2FA code for download verification\nconst twoFACode = Math.floor(100000 + Math.random() * 900000).toString();\n\n// Generate package name\nconst packageName = `CelesteOS-${yachtId}.dmg`;\n\n// Generate package path (REQUIRED - NOT NULL field)\nconst packagePath = `/packages/yachts/${yachtId}/${packageName}`;\n\n// Generate download URL\nconst downloadUrl = `https://downloads.celeste7.ai/${downloadToken}/${packageName}`;\n\n// Package size in bytes (500 MB = 524,288,000 bytes)\nconst packageSizeBytes = 524288000;\n\n// Return all required fields\nreturn [{\n  json: {\n    yacht_id: yachtId,\n    yacht_id_hash: yachtIdHash,\n    download_token: downloadToken,\n    download_url: downloadUrl,\n    twofa_code: twoFACode,\n    package_name: packageName,\n    package_path: packagePath,\n    package_size_bytes: packageSizeBytes,\n    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days\n  }\n}];"
+      },
+      "id": "420f5ecd-0128-4c98-837b-8e20be08e5e6",
+      "name": "Generate Download Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "download_links",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "yacht_id",
+              "fieldValue": "={{ $json.yacht_id }}"
+            },
+            {
+              "fieldId": "yacht_id_hash",
+              "fieldValue": "={{ $json.yacht_id_hash }}"
+            },
+            {
+              "fieldId": "download_token",
+              "fieldValue": "={{ $json.download_token }}"
+            },
+            {
+              "fieldId": "download_url",
+              "fieldValue": "={{ $json.download_url }}"
+            },
+            {
+              "fieldId": "twofa_code",
+              "fieldValue": "={{ $json.twofa_code }}"
+            },
+            {
+              "fieldId": "expires_at",
+              "fieldValue": "={{ $json.expires_at }}"
+            },
+            {
+              "fieldId": "package_name",
+              "fieldValue": "={{ $json.package_name }}"
+            },
+            {
+              "fieldId": "package_size_bytes",
+              "fieldValue": "={{ $json.package_size_bytes }}"
+            },
+            {
+              "fieldId": "downloaded",
+              "fieldValue": "false"
+            },
+            {
+              "fieldId": "download_count",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "package_path",
+              "fieldValue": "={{ $json.package_path }}"
+            }
+          ]
+        }
+      },
+      "id": "bb9ac4a7-7dcc-4e68-a565-774371f08810",
+      "name": "Create Download Link",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        780
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Wc3ZWjOBx3dx33V6",
+          "name": "CelesteOS DEMO"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"download_token\": $json.download_token, \"message\": \"Download link created\" } }}",
+        "options": {}
+      },
+      "id": "fd0fccb7-ec18-4cbc-8def-dfdbe0686786",
+      "name": "Respond - Success2",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Invalid or expired session\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "bb107c04-1bf3-4f09-ac58-02dbeba6a34a",
+      "name": "Respond - Error1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        380,
+        980
+      ]
+    },
+    {
+      "parameters": {
+        "toRecipients": "={{ $json.email }}",
+        "subject": "CelesteOS - Your 2FA Code",
+        "bodyContent": "=Your 2FA verification code is:\n\n{{ $json.code }}\n\nThis code expires in 10 minutes.\n\nDo not share this code with anyone.\n\n--\nCelesteOS Team",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        580,
+        -80
+      ],
+      "id": "f04c69e7-e91b-4c35-aa38-6df27b60955a",
+      "name": "Microsoft Outlook",
+      "webhookId": "9a47beaa-b339-4c8c-8f11-3c0a737fca5e",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "W9dyroshZ6nsHo8q",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        360,
+        -140
+      ],
+      "id": "cd5a9f79-fb44-4ef5-ade3-d11866128757",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "content": "## User Login\n",
+        "height": 180,
+        "width": 340,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -540,
+        -120
+      ],
+      "id": "9db3d3c9-2891-4ec2-ab22-8af616e64345",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Verify 2FA\n",
+        "height": 180,
+        "width": 340,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        320
+      ],
+      "id": "3526fab7-ced4-4b5c-a66c-7fb4f38dc803",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Send Download\n",
+        "height": 180,
+        "width": 340,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        860
+      ],
+      "id": "de9984c4-711d-4fb6-80db-c648f99441d4",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 500,
+        "width": 1760,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        700
+      ],
+      "id": "62fce70f-9fcc-4a89-bd2f-c4d349e6cf4e",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 500,
+        "width": 1980,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        180
+      ],
+      "id": "8b10fd73-a23a-4836-a75b-7e8355291000",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 360,
+        "width": 1360,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        -200
+      ],
+      "id": "6dba843c-8317-4b45-bdd0-baf24a856316",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - User Login": {
+      "main": [
+        [
+          {
+            "node": "Generate 2FA Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate 2FA Code": {
+      "main": [
+        [
+          {
+            "node": "Insert 2FA Code",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert 2FA Code": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Webhook - Verify 2FA": {
+      "main": [
+        [
+          {
+            "node": "Hash Input Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash Input Code": {
+      "main": [
+        [
+          {
+            "node": "Query 2FA Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query 2FA Code": {
+      "main": [
+        [
+          {
+            "node": "Check Code Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Code Valid": {
+      "main": [
+        [
+          {
+            "node": "Validate Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Code": {
+      "main": [
+        [
+          {
+            "node": "Mark Code Used",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Code Used": {
+      "main": [
+        [
+          {
+            "node": "Generate Session Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Session Token": {
+      "main": [
+        [
+          {
+            "node": "Create Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Session": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Download Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Session": {
+      "main": [
+        [
+          {
+            "node": "Check Session Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Session Valid": {
+      "main": [
+        [
+          {
+            "node": "Check Session Expiration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Session Expiration": {
+      "main": [
+        [
+          {
+            "node": "Get User Yacht",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Yacht": {
+      "main": [
+        [
+          {
+            "node": "Generate Download Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Download Link": {
+      "main": [
+        [
+          {
+            "node": "Create Download Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Download Link": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Microsoft Outlook": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Microsoft Outlook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "997a79cf-524c-4f74-823c-c907ad22582f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6385a73eae1665b82318a3c042d3a51d9597ca6c6d39690ed8a47ce1aa6e47e3"
+  },
+  "id": "uuasIGGkr8EpdaJO",
+  "tags": []
+}
