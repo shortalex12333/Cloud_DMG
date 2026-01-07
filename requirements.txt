@@ -9,3 +9,7 @@ python-dotenv==1.0.0
 
 # HTTP Client
 requests==2.31.0
+
+# Security - Military Grade Protection
+slowapi==0.1.9  # Rate limiting for high-value targets
+python-json-logger==2.0.7  # Structured logging for audit trails

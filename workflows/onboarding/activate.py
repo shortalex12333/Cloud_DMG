@@ -6,6 +6,7 @@ import html
 from typing import Dict, Any, Tuple
 from core.validation.yacht_id import validate_yacht_id
 from core.database.fleet_registry import lookup_for_activation, activate_yacht
+from core.security.audit_logger import log_activation_attempt
 
 
 def generate_success_page(yacht_id: str) -> str:
@@ -93,7 +94,7 @@ def generate_error_page(yacht_id: str, error_message: str) -> str:
 </html>'''
 
 
-def handle_activate(yacht_id: str) -> Tuple[str, int]:
+def handle_activate(yacht_id: str, http_request=None) -> Tuple[str, int]:
     """
     Handle buyer activation request (from email link).
 
@@ -145,11 +146,20 @@ def handle_activate(yacht_id: str) -> Tuple[str, int]:
             ), 500
 
     except Exception as e:
-        print(f"Error activating yacht {yacht_id}: {e}")
+        client_ip = http_request.client.host if http_request and http_request.client else "unknown"
+        request_id = getattr(http_request.state, 'request_id', 'unknown') if http_request else "unknown"
+
+        log_activation_attempt(yacht_id, client_ip, request_id, success=False)
+
         return generate_error_page(
             yacht_id,
             "An error occurred during activation. Please try again."
         ), 500
 
-    # Step 4: Return success page
+    # Step 4: Log and return success page
+    client_ip = http_request.client.host if http_request and http_request.client else "unknown"
+    request_id = getattr(http_request.state, 'request_id', 'unknown') if http_request else "unknown"
+
+    log_activation_attempt(yacht_id, client_ip, request_id, success=True)
+
     return generate_success_page(yacht_id), 200

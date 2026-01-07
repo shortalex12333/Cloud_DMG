@@ -8,6 +8,7 @@ from core.validation.email import validate_email, get_email_error_message
 from core.database.fleet_registry import lookup_yacht, update_registration_timestamp
 from core.validation.schemas import RegisterRequest, RegisterResponse, ErrorResponse
 from core.email.sender import send_activation_email
+from core.security.audit_logger import app_logger, log_registration_attempt
 import html
 
 
@@ -88,7 +89,7 @@ If you did not request this activation, please ignore this email.'''
     }
 
 
-def handle_register(request: RegisterRequest) -> Dict[str, Any]:
+def handle_register(request: RegisterRequest, http_request=None) -> Dict[str, Any]:
     """
     Handle yacht registration request.
 
@@ -144,7 +145,11 @@ def handle_register(request: RegisterRequest) -> Dict[str, Any]:
         update_registration_timestamp(sanitized["yacht_id"])
     except Exception as e:
         # Non-blocking error - continue even if timestamp update fails
-        print(f"Warning: Failed to update registration timestamp: {e}")
+        app_logger.warning("registration_timestamp_update_failed", extra={
+            "yacht_id": sanitized["yacht_id"],
+            "error": str(e),
+            "error_type": type(e).__name__,
+        })
 
     # Step 5: Prepare activation email
     email_data = prepare_activation_email(sanitized["yacht_id"], buyer_email)
@@ -159,17 +164,35 @@ def handle_register(request: RegisterRequest) -> Dict[str, Any]:
         )
 
         if email_result.get("success"):
-            print(f"[EMAIL] ✅ Sent to {buyer_email}")
+            app_logger.info("activation_email_sent", extra={
+                "yacht_id": sanitized["yacht_id"],
+                "recipient": buyer_email,
+                "method": email_result.get("method", "unknown"),
+            })
         else:
-            print(f"[EMAIL] ⚠️ Failed to send: {email_result.get('error')}")
-            print(f"[EMAIL] Activation Link (manual): {email_data['activation_link']}")
+            app_logger.warning("activation_email_failed", extra={
+                "yacht_id": sanitized["yacht_id"],
+                "recipient": buyer_email,
+                "error": email_result.get("error"),
+                "activation_link": email_data['activation_link'],
+            })
             # Don't fail registration if email fails - return success anyway
     except Exception as e:
-        print(f"[EMAIL] ⚠️ Exception: {e}")
-        print(f"[EMAIL] Activation Link (manual): {email_data['activation_link']}")
+        app_logger.error("activation_email_exception", extra={
+            "yacht_id": sanitized["yacht_id"],
+            "recipient": buyer_email,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "activation_link": email_data['activation_link'],
+        })
         # Don't fail registration if email fails
 
-    # Step 7: Return success response
+    # Step 7: Log and return success response
+    client_ip = http_request.client.host if http_request and http_request.client else "unknown"
+    request_id = getattr(http_request.state, 'request_id', 'unknown') if http_request else "unknown"
+
+    log_registration_attempt(sanitized["yacht_id"], client_ip, request_id, success=True)
+
     return RegisterResponse(
         success=True,
         message="Registration successful. Activation email sent.",
