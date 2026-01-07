@@ -56,17 +56,18 @@
 
 **Expected:** Endpoint should return `{status: "pending"}`
 **Actual:** Not found
-**Root Cause:** Either:
-- Workflow not deployed to n8n
-- Endpoint path mismatch
-- HTTP method mismatch (should be POST, might be configured as GET)
+
+**Root Cause:** ✅ **IDENTIFIED** (See DEPLOYMENT_STATUS.md)
+- n8n API response: "The requested webhook 'POST check-activation/TEST_YACHT_001' is not registered"
+- Workflow exists but is **NOT ACTIVATED** in production
+- Only POST /register is active (1/3 endpoints = 33%)
 
 **Impact:** 🔴 HIGH - Installer cannot poll for activation status
 **Fix Required:**
 ```bash
-# Verify workflow is active in n8n dashboard
-# Check webhook configuration matches:
-POST /webhook/check-activation/:yacht_id
+# Access n8n dashboard and activate workflow
+# See DEPLOYMENT_STATUS.md for full resolution steps
+open https://api.celeste7.ai
 ```
 
 ---
