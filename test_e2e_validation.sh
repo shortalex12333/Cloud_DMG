@@ -57,7 +57,7 @@ run_test() {
 
 # Generate yacht_id_hash
 generate_hash() {
-    echo -n "$1" | openssl dgst -sha256 | awk '{print $2}'
+    echo -n "$1" | openssl dgst -sha256 | sed 's/^.* //'
 }
 
 # Database query helper
