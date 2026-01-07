@@ -1,0 +1,309 @@
+{
+  "name": "Index_docs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "index-documents",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        300,
+        900
+      ],
+      "id": "3b2ed5f5-da5a-4b26-8d2e-bca18da3b18b",
+      "name": "Webhook",
+      "webhookId": "c7ea7617-a8ff-4f4d-bac3-58627194ec5e"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://celeste-file-type.onrender.com/extract",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"storage_path\": \"{{ $json.body.storage_path }}\",\n  \"content_type\": \"{{ $json.body.content_type }}\",\n  \"filename\": \"{{ $json.body.filename }}\",\n  \"yacht_id\": \"{{ $json.body.yacht_id }}\",\n  \"document_id\": \"{{ $json.body.document_id }}\",\n  \"doc_type\": \"{{ $json.body.doc_type }}\",\n  \"system_tag\": \"{{ $json.body.system_tag }}\"\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        800
+      ],
+      "id": "53d6c2c1-a62f-49d9-b553-dd6e54595821",
+      "name": "Extract Text"
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "yacht_id",
+                "value": "={{ $json.yacht_id }}"
+              },
+              {
+                "name": "document_id",
+                "value": "={{ $json.document_id }}"
+              },
+              {
+                "name": "filename",
+                "value": "={{ $json.filename }}"
+              },
+              {
+                "name": "content_type",
+                "value": "={{ $json.content_type }}"
+              },
+              {
+                "name": "doc_type",
+                "value": "={{ $json.doc_type }}"
+              },
+              {
+                "name": "system_tag",
+                "value": "={{ $json.system_tag }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b5435cbe-bb31-4fa7-a5b6-9e5f966a015e",
+      "name": "Document Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "position": [
+        860,
+        1022.5
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "chunkOverlap": 200,
+        "options": {}
+      },
+      "id": "273ba872-2a95-4a4e-a0b6-06d8c7662176",
+      "name": "Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "position": [
+        948,
+        1220
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "41b74d87-264d-4211-a791-6e4e4338b4cb",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "position": [
+        740,
+        1020
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "openAiApi": {
+          "id": "trAmlWz7YdldnThl",
+          "name": "OpenAi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "search_document_chunks",
+          "cachedResultName": "search_document_chunks"
+        },
+        "options": {
+          "queryName": "match_documents"
+        }
+      },
+      "id": "96eafa87-e2bb-47f9-b3ac-9d1e2de79943",
+      "name": "Insert to Supabase",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "position": [
+        756,
+        800
+      ],
+      "typeVersion": 1,
+      "credentials": {
+        "supabaseApi": {
+          "id": "TYZQMctc7crEVTTP",
+          "name": "PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"indexed\",\n  \"document_id\": \"{{ $json.metadata.document_id }}\",\n  \"yacht_id\": \"{{ $json.metadata.yacht_id }}\",\n  \"filename\": \"{{ $json.metadata.filename }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1240,
+        800
+      ],
+      "id": "3852e669-1885-4c62-8748-73d689f53e20",
+      "name": "Respond Success"
+    },
+    {
+      "parameters": {
+        "content": "# Index Documents - SIMPLE\n\n## Flow:\n1. Webhook receives metadata\n2. POST to extraction service\n   - Service fetches from Supabase\n   - Extracts text (PDF/DOCX/XLSX/etc)\n   - Returns text + metadata\n3. Chunk + Embed + Store\n\n## Supported:\nPDF, DOCX, XLSX, CSV, JSON, XML, HTML, TXT\n\n## Extraction Service:\nhttps://celeste-extraction.onrender.com",
+        "height": 280,
+        "width": 480
+      },
+      "id": "29a9c576-f9cd-4eea-a121-82266095535b",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        280,
+        380
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "jsCode": "return[\n  {\n    \"headers\": {\n      \"connection\": \"close\",\n      \"host\": \"api.celeste7.ai\",\n      \"x-real-ip\": \"172.18.0.2\",\n      \"x-forwarded-for\": \"172.18.0.2\",\n      \"x-forwarded-proto\": \"https\",\n      \"x-forwarded-host\": \"api.celeste7.ai\",\n      \"content-length\": \"307\",\n      \"accept\": \"application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7\",\n      \"content-type\": \"application/json\",\n      \"user-agent\": \"axios/1.8.3\",\n      \"accept-encoding\": \"gzip, compress, deflate, br\"\n    },\n    \"params\": {},\n    \"query\": {},\n    \"body\": {\n      \"filename\": \"capdf68.pdf\",\n      \"content_type\": \"application/pdf\",\n      \"storage_path\": \"documents/85fe1119-b04c-41ac-80f1-829d23322598/02_ENGINEERING/fuel_systems/capdf68.pdf\",\n      \"document_id\": \"9499c577-a0c4-4b43-9505-9c0f1464fc00\",\n      \"yacht_id\": \"85fe1119-b04c-41ac-80f1-829d23322598\",\n      \"system_tag\": \"fuel\",\n      \"doc_type\": \"general\"\n    },\n    \"webhookUrl\": \"https://api.celeste7.ai/webhook/index-documents\",\n    \"executionMode\": \"production\"\n  }\n]\n;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        700
+      ],
+      "id": "dad2d57b-9d9f-4431-9992-d97e5e599b48",
+      "name": "Code"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        80,
+        700
+      ],
+      "id": "fd82cae0-8d38-48a5-a098-909d092f66f6",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Document Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert to Supabase",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "70d8ec28-3755-4b90-a597-293ea9ee8e57",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6385a73eae1665b82318a3c042d3a51d9597ca6c6d39690ed8a47ce1aa6e47e3"
+  },
+  "id": "vZRvIraKjRuXSX0m",
+  "tags": []
+}

@@ -1,0 +1,422 @@
+{
+  "name": "Ingestion_Docs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ingest-docs-nas-cloud",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        215
+      ],
+      "id": "25ea3b83-a4d9-4a30-9383-055f22a3b34c",
+      "name": "Webhook",
+      "webhookId": "9fefa1ec-4e3a-46a1-818c-52dacdf6359b"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT id, filename, indexed \nFROM doc_metadata \nWHERE yacht_id = '{{ $json.yacht_id }}'::uuid \n  AND filename = '{{ $json.filename }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -240,
+        390
+      ],
+      "id": "9aeb7818-980d-4746-8a7a-1af5a6dbe9a8",
+      "name": "Check for Duplicate",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"duplicate\",\n  \"message\": \"File already exists (SHA256 match)\",\n  \"file\": \"{{ $json.filename }}\",\n  \"document_id\": \"{{ $json.id }}\",\n  \"sha256\": \"{{ $json.sha256 }}\",\n  \"indexed\": {{ $json.indexed }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        390
+      ],
+      "id": "70d1cf85-283e-4bae-8cc9-819758233074",
+      "name": "Respond Duplicate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://vzsohavtuotocgrfkfyd.supabase.co/storage/v1/object/documents/{{ $json.headers[\"x-yacht-id\"] }}/{{ $json.system_path }}/{{ $json.filename }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.content_type }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "file",
+        "options": {}
+      },
+      "id": "fb5e8e8a-febb-4ab6-af33-c059f1e96125",
+      "name": "Upload to Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        -240,
+        -10
+      ],
+      "typeVersion": 4.2,
+      "credentials": {
+        "supabaseApi": {
+          "id": "TYZQMctc7crEVTTP",
+          "name": "PMS"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO doc_metadata (\n    yacht_id,\n    source,\n    original_path,\n    filename,\n    content_type,\n    size_bytes,\n    sha256,\n    storage_path,\n    system_path,\n    indexed,\n    metadata,\n    doc_type,\n    system_type\n  )\n  VALUES (\n    '{{ $json.yacht_id }}'::uuid,\n    'nas',\n    '{{ $json.local_path }}',\n    '{{ $json.filename }}',\n    '{{ $json.content_type }}',\n    {{ $json.file_size }},\n    {{ $json.sha256 === null ? 'NULL' : \"'\" + $json.sha256 + \"'\" }},\n    '{{ $json.storage_path }}',\n    '{{ $json.system_path }}',\n    false,\n    '{{ $json.metadata }}'::jsonb,\n    '{{ $json.doc_type }}',\n    '{{ $json.system_type }}'\n  )\n  RETURNING *;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        420,
+        165
+      ],
+      "id": "b39f942f-f1f5-4916-93e1-c63529c7c343",
+      "name": "Insert to doc_metadata",
+      "credentials": {
+        "postgres": {
+          "id": "aWIDhHpJCpC97WzF",
+          "name": "Cloud PMS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.celeste7.ai/webhook/index-documents",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "filename",
+              "value": "={{ $json.filename }}"
+            },
+            {
+              "name": "content_type",
+              "value": "={{ $json.content_type }}"
+            },
+            {
+              "name": "storage_path",
+              "value": "={{ $json.storage_path }}"
+            },
+            {
+              "name": "document_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "yacht_id",
+              "value": "={{ $json.yacht_id }}"
+            },
+            {
+              "name": "system_tag",
+              "value": "={{ $json.system_type }}"
+            },
+            {
+              "name": "doc_type",
+              "value": "={{ $json.doc_type }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        165
+      ],
+      "id": "fd82cd56-4d42-4c0b-b188-239dea45976f",
+      "name": "Trigger Indexing"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        640,
+        165
+      ],
+      "id": "232b62c1-5875-42a0-9dac-a8723f7e4f18",
+      "name": "Respond Success"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -680,
+        -320
+      ],
+      "id": "5703a008-4d65-48f3-8c20-9e23611cea5b",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return[\n  {\n    \"Key\": \"documents/85fe1119-b04c-41ac-80f1-829d23322598/test_upload.txt\",\n    \"Id\": \"22d262fc-9ff2-4402-8dbc-26f8d7589333\",\n    \"headers\": {\n      \"connection\": \"close\",\n      \"host\": \"api.celeste7.ai\",\n      \"x-real-ip\": \"98.58.226.220\",\n      \"x-forwarded-for\": \"98.58.226.220\",\n      \"x-forwarded-proto\": \"https\",\n      \"x-forwarded-host\": \"api.celeste7.ai\",\n      \"content-length\": \"518\",\n      \"user-agent\": \"curl/8.7.1\",\n      \"accept\": \"*/*\",\n      \"x-yacht-id\": \"85fe1119-b04c-41ac-80f1-829d23322598\",\n      \"content-type\": \"multipart/form-data; boundary=------------------------7b6X3HEYG3IoCoiE7XEtp5\"\n    },\n    \"yacht_id\": \"85fe1119-b04c-41ac-80f1-829d23322598\",\n    \"filename\": \"test_upload.txt\",\n    \"content_type\": \"text/plain\",\n    \"file_size\": 13,\n    \"system_path\": \"\",\n    \"directories\": [],\n    \"doc_type\": \"general\",\n    \"system_tag\": \"general\",\n    \"body\": {\n      \"data\": \"{\\\"yacht_id\\\":\\\"85fe1119-b04c-41ac-80f1-829d23322598\\\",\\\"filename\\\":\\\"test_upload.txt\\\",\\\"content_type\\\":\\\"text/plain\\\",\\\"file_size\\\":13,\\\"system_path\\\":\\\"\\\",\\\"directories\\\":[],\\\"doc_type\\\":\\\"general\\\",\\\"system_tag\\\":\\\"general\\\"}\"\n    }\n  }\n]\n;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        -320
+      ],
+      "id": "c5feccf6-ef04-4736-bb5b-7de509548ed0",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "jsCode": " // Parse incoming webhook data\n  // The metadata comes as a JSON string in body.data\n\n  const item = $input.item;\n\n  // Parse the JSON string in body.data\n  const metadata = JSON.parse(item.json.body.data);\n\n  // Extract all fields\n  const yacht_id = metadata.yacht_id;\n  const local_path = metadata.local_path;\n  const filename = metadata.filename;\n  const content_type = metadata.content_type;\n  const file_size = metadata.file_size;\n  const system_path = metadata.system_path;\n  const directories = metadata.directories;\n  const doc_type = metadata.doc_type;\n  const system_tag = metadata.system_tag;\n\n  // Return structured data\n  return [{\n    json: {\n      // Original headers\n      headers: item.json.headers,\n\n      // Parsed metadata fields\n      yacht_id: yacht_id,\n      local_path: local_path,\n      filename: filename,\n      content_type: content_type,\n      file_size: file_size,\n      system_path: system_path,\n      directories: directories,\n      doc_type: doc_type,\n      system_tag: system_tag,\n\n      // Also keep the original for reference\n      body: item.json.body\n    },\n    binary: item.binary\n  }];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        215
+      ],
+      "id": "a0554fea-c17d-4809-8980-38631fa07b41",
+      "name": "Data Parser"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -20,
+        165
+      ],
+      "id": "11e7a7c6-f054-4a3f-b919-8668e6c4a9de",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"duplicate\",\n  \"message\": \"File already exists (SHA256 match)\",\n  \"file\": \"{{ $json.filename }}\",\n  \"document_id\": \"{{ $json.id }}\",\n  \"sha256\": \"{{ $json.sha256 }}\",\n  \"indexed\": {{ $json.indexed }}\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -20,
+        -60
+      ],
+      "id": "b68a735d-ba92-43b1-800a-95656d93d773",
+      "name": "Respond Duplicate1"
+    },
+    {
+      "parameters": {
+        "jsCode": " const item = $input.item;\n\n  // Get data from merged sources\n  const yacht_id = item.json.yacht_id;\n  const filename = item.json.filename;\n  const content_type = item.json.content_type;\n  const file_size = item.json.file_size;\n  const system_path = item.json.system_path || \"\";\n  const directories = item.json.directories || [];\n  const doc_type = item.json.doc_type;\n  const system_tag = item.json.system_tag;  // Incoming as system_tag\n  const storage_path = item.json.Key; // From Upload to Storage\n  const local_path = item.json.local_path || \"\";\n\n  // Calculate sha256 (set to NULL for now)\n  const sha256 = null;\n\n  // Build metadata JSONB\n  const metadata = {\n    directories: directories,\n    upload_timestamp: new Date().toISOString(),\n    file_extension: filename.split(\".\").pop(),\n    department: directories.length > 0 ? directories[0] : null,\n    local_path: local_path\n  };\n\n  // Return prepared data\n  return {\n    json: {\n      yacht_id: yacht_id,\n      filename: filename,\n      content_type: content_type,\n      file_size: file_size,\n      system_path: system_path,\n      directories: directories,\n      doc_type: doc_type,\n      system_type: system_tag,  // <-- Map system_tag to system_type\n      storage_path: storage_path,\n      local_path: local_path,\n      sha256: sha256,\n      metadata: JSON.stringify(metadata)\n    }\n  };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        165
+      ],
+      "id": "24f234b8-5529-4e01-a4cd-2cdb1ce5cf0f",
+      "name": "Prepare Insert Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Data Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Storage": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Duplicate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to doc_metadata": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Indexing": {
+      "main": [
+        []
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Data Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Parser": {
+      "main": [
+        [
+          {
+            "node": "Check for Duplicate",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to Storage",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Prepare Insert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Trigger Indexing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Insert Data": {
+      "main": [
+        [
+          {
+            "node": "Insert to doc_metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "22dfdd80-46ef-4c16-bcba-4b9f8ef09f3d",
+  "meta": {
+    "instanceId": "6385a73eae1665b82318a3c042d3a51d9597ca6c6d39690ed8a47ce1aa6e47e3"
+  },
+  "id": "iuonOEGMYH2rnSQa",
+  "tags": []
+}
