@@ -43,14 +43,14 @@ class TestRegisterEndpoint:
 
     def test_register_invalid_yacht_id(self):
         """Test registration with invalid yacht_id format"""
-        request = RegisterRequest(
-            yacht_id="invalid!@#",  # Invalid characters
-            yacht_id_hash="a" * 64
-        )
+        from pydantic import ValidationError
 
         # This should raise validation error from Pydantic
-        with pytest.raises(Exception):
-            handle_register(request)
+        with pytest.raises(ValidationError):
+            request = RegisterRequest(
+                yacht_id="invalid!@#",  # Invalid characters
+                yacht_id_hash="a" * 64
+            )
 
     def test_register_invalid_hash(self):
         """Test registration with invalid hash format"""
@@ -145,7 +145,8 @@ class TestCheckActivationEndpoint:
         result = handle_check_activation("TEST_YACHT_001")
 
         assert result["status"] == "already_retrieved"
-        assert "shared_secret" not in result
+        # shared_secret should be None (not returned on second retrieval)
+        assert result.get("shared_secret") is None
 
     @patch('workflows.onboarding.check_activation.lookup_status')
     def test_check_activation_not_found(self, mock_lookup):
