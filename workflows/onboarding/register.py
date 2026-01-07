@@ -7,6 +7,7 @@ from core.validation.yacht_id import validate_registration_input
 from core.validation.email import validate_email, get_email_error_message
 from core.database.fleet_registry import lookup_yacht, update_registration_timestamp
 from core.validation.schemas import RegisterRequest, RegisterResponse, ErrorResponse
+from core.email.sender import send_activation_email
 import html
 
 
@@ -148,12 +149,25 @@ def handle_register(request: RegisterRequest) -> Dict[str, Any]:
     # Step 5: Prepare activation email
     email_data = prepare_activation_email(sanitized["yacht_id"], buyer_email)
 
-    # Step 6: Send email
-    # TODO: Implement email sending via Microsoft Outlook API or SMTP
-    # For now, we'll simulate success
-    print(f"[EMAIL] Would send to {buyer_email}:")
-    print(f"[EMAIL] Subject: {email_data['subject']}")
-    print(f"[EMAIL] Activation Link: {email_data['activation_link']}")
+    # Step 6: Send email via Microsoft Graph API
+    try:
+        email_result = send_activation_email(
+            to=email_data["to"],
+            subject=email_data["subject"],
+            html=email_data["html"],
+            text=email_data["text"]
+        )
+
+        if email_result.get("success"):
+            print(f"[EMAIL] ✅ Sent to {buyer_email}")
+        else:
+            print(f"[EMAIL] ⚠️ Failed to send: {email_result.get('error')}")
+            print(f"[EMAIL] Activation Link (manual): {email_data['activation_link']}")
+            # Don't fail registration if email fails - return success anyway
+    except Exception as e:
+        print(f"[EMAIL] ⚠️ Exception: {e}")
+        print(f"[EMAIL] Activation Link (manual): {email_data['activation_link']}")
+        # Don't fail registration if email fails
 
     # Step 7: Return success response
     return RegisterResponse(
